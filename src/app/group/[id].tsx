@@ -24,7 +24,7 @@ import {
   type GroupMember,
   type MemberStatus,
 } from '@/lib/api';
-import { formatDistance, fromGeoJsonCoordinates } from '@/lib/directions';
+import { formatDistance, fromGeoJsonCoordinates, getWalkingRoute, type WalkingRoute } from '@/lib/directions';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
@@ -67,6 +67,26 @@ export default function GroupScreen() {
   const me = group?.members.find((m) => m.is_me);
   const isWalking = group?.status === 'walking';
   const shareMyLocation = isWalking && me?.status === 'confirmed';
+
+  // After your split point you walk home alone; fetch a real walking route for that leg.
+  // (Anchors already have their full route in shared_route.)
+  const soloKey =
+    group && !group.is_anchor && me?.split_lat != null && me.split_lng != null
+      ? `${me.split_lat},${me.split_lng},${group.my_destination.lat},${group.my_destination.lng}`
+      : null;
+  const [solo, setSolo] = useState<{ key: string; route: WalkingRoute } | null>(null);
+  useEffect(() => {
+    if (!soloKey) return;
+    let cancelled = false;
+    const [fromLat, fromLng, toLat, toLng] = soloKey.split(',').map(Number);
+    getWalkingRoute({ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng })
+      .then((route) => !cancelled && setSolo({ key: soloKey, route }))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [soloKey]);
+  const soloRoute = solo?.key === soloKey ? solo.route : null;
 
   // Live locations go over a private broadcast channel only group members can join (see realtime.messages policies).
   useEffect(() => {
@@ -196,14 +216,12 @@ export default function GroupScreen() {
         </ThemedText>
         {others.length > 0 && me.walk_alone_m != null && (
           <ThemedText type="small" themeColor="textSecondary">
-            {me.walk_alone_m < 30
-              ? 'The group walks with you all the way to your destination.'
-              : `You'll walk with the group, then ${formatDistance(me.walk_alone_m)} on your own to your destination.`}
+            {`You'll walk with the group, then about ${formatDistance(soloRoute?.distanceM ?? me.walk_alone_m)} on your own (dashed line). For privacy, groups split at least a block before anyone's home.`}
           </ThemedText>
         )}
       </Card>
 
-      <WalkMap pins={pins} route={fromGeoJsonCoordinates(group.my_route)} />
+      <WalkMap pins={pins} route={fromGeoJsonCoordinates(group.shared_route)} soloRoute={soloRoute?.points} />
 
       <View style={styles.members}>
         {group.members.map((m) => (

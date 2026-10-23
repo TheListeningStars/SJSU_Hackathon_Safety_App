@@ -22,24 +22,30 @@ export async function getWalkingRoute(from: LatLng, to: LatLng): Promise<Walking
     };
   }
 
-  const params = new URLSearchParams({
-    origin: `${from.latitude},${from.longitude}`,
-    destination: `${to.latitude},${to.longitude}`,
-    mode: 'walking',
-    key: googleKey,
+  // Google Routes API (the legacy Directions API can't be enabled on new Cloud projects).
+  const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': googleKey,
+      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: from } },
+      destination: { location: { latLng: to } },
+      travelMode: 'WALK',
+    }),
   });
-  const res = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`);
   const json = await res.json();
-  if (json.status !== 'OK' || !json.routes?.length) {
-    throw new Error(json.error_message ?? `Could not find a walking route (${json.status})`);
+  const route = json.routes?.[0];
+  if (!res.ok || !route) {
+    throw new Error(json.error?.message ?? 'Could not find a walking route');
   }
 
-  const route = json.routes[0];
-  const leg = route.legs[0];
   return {
-    points: decodePolyline(route.overview_polyline.points),
-    distanceM: leg.distance.value,
-    durationS: leg.duration.value,
+    points: decodePolyline(route.polyline.encodedPolyline),
+    distanceM: route.distanceMeters,
+    durationS: parseFloat(route.duration), // e.g. "742s"
     isFallback: false,
   };
 }

@@ -6,10 +6,10 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 
 1. **Sign in** with a `.edu` email (one-time code). Non-university emails are rejected by the database.
 2. **Verify** with a profile photo, a photo of a government ID and a selfie. ID images go to a private bucket that only reviewers can read. Matching stays locked until a reviewer approves.
-3. **Plan a walk**: pick a meetup point, tap your destination on the map and choose when you're leaving. The app gets a walking route from Google Directions.
-4. **Get matched**: PostGIS joins you to a forming group at the same meetup point (departing within 15 minutes, max 4 people) whose routes overlap yours the most.
+3. **Plan a walk**: pick a meetup point, tap your destination on the map and choose when you're leaving. The app gets a walking route from the Google Routes API.
+4. **Get matched**: PostGIS joins you to a forming group at the same meetup point (departing within 15 minutes, max 4 people) heading your way, as long as nobody's walk gets more than ~35% longer.
 5. **Confirm**: confirming shares your profile photo with that group only. You see someone's photo once you've both confirmed.
-6. **Walk**: everyone stays together while at least one other person's route still runs alongside theirs, then peels off at their split point. Live locations are shared over a private Realtime channel only group members can join. SafeWalk call/text and 911 buttons are always on screen.
+6. **Walk**: the group follows one shared path, and each person peels off at the point closest to their home. For privacy, splits happen at least ~100 m before anyone's home. Live locations are shared over a private Realtime channel only group members can join. SafeWalk call/text and 911 buttons are always on screen.
 7. **After the walk**: everyone taps "I'm home safe." Then each person can choose who to share contact info with. Info is revealed only when both people opt in.
 
 ## Stack
@@ -19,7 +19,7 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 | App | Expo SDK 58, Expo Router, TypeScript |
 | Maps & location | `react-native-maps`, `expo-location` |
 | Backend | Supabase (Postgres + PostGIS + Realtime + Storage) |
-| Routes | Google Directions API (walking mode) |
+| Routes | Google Routes API (walking mode) |
 | SafeWalk call/text | `expo-linking` (`tel:` / `sms:`) |
 
 ## Setup
@@ -27,14 +27,14 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**, paste in [`supabase/migrations/0001_packtrack.sql`](supabase/migrations/0001_packtrack.sql) and run it. This creates the tables, privacy rules, storage buckets, Realtime policies and SJSU meetup points.
+2. Open **SQL Editor** and run each file in [`supabase/migrations/`](supabase/migrations/) in order (`0001`, then `0002`). This creates the tables, privacy rules, storage buckets, Realtime policies and SJSU meetup points.
 3. **Authentication → Email Templates → Magic Link**: add `{{ .Token }}` to the template so the email contains the 6-digit code the app asks for.
 4. **Authentication → Sign In / Providers**: make sure Email is enabled.
 5. **Realtime → Settings**: turn off "Allow public access" if you want only private channels (the app uses private ones).
 
-### 2. Google Directions (optional but recommended)
+### 2. Google Routes API (optional but recommended)
 
-Enable the **Directions API** in Google Cloud and create an API key. Without a key the app falls back to straight-line routes, which still works for a demo but makes matching less accurate.
+Enable the **Routes API** in Google Cloud and create an API key (the older Directions API can no longer be enabled on new projects). Without a key the app falls back to straight-line routes, which still works for a demo but makes matching less accurate.
 
 ### 3. Environment
 
@@ -80,12 +80,12 @@ src/app/              screens (Expo Router)
   (tabs)/profile.tsx  your profile and contact info
   group/[id].tsx      live group: members, split points, live locations
   share/[id].tsx      opt-in contact sharing after a walk
-src/lib/              Supabase client, API calls, Directions, image upload
+src/lib/              Supabase client, API calls, walking routes, image upload
 supabase/migrations/  database schema, privacy rules and matching logic
 ```
 
 ## Known limitations
 
 - ID review is manual. For production, swap in a provider such as Stripe Identity or Persona and have its webhook call `review_id_verification`.
-- The Google key is used from the client. Before launch, move Directions calls into a Supabase Edge Function so the key stays server-side.
+- The Google key is used from the client. Before launch, move Routes API calls into a Supabase Edge Function so the key stays server-side.
 - Meetup point coordinates and the SafeWalk number (`src/constants/theme.ts`) are approximate. Check them before demoing.

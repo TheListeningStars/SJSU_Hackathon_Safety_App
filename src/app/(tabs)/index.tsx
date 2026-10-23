@@ -32,7 +32,7 @@ const DEPART_OPTIONS = [
 ];
 
 export default function WalkScreen() {
-  const { profile } = useSession();
+  const { profile, refreshProfile } = useSession();
   const [points, setPoints] = useState<MeetupPoint[]>([]);
   const [meetupId, setMeetupId] = useState<string | null>(null);
   const [destination, setDestination] = useState<LatLng | null>(null);
@@ -59,10 +59,11 @@ export default function WalkScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      refreshProfile();
       getActiveGroup()
         .then(setActiveGroup)
         .catch(() => setActiveGroup(null));
-    }, [])
+    }, [refreshProfile])
   );
 
   // Only the latest route request may update state, in case the user taps around quickly.
@@ -196,7 +197,7 @@ export default function WalkScreen() {
 
       <ErrorText message={error} />
       <Button
-        title={verified ? 'Find walking buddies' : 'Waiting on ID verification'}
+        title={findButtonTitle({ verified, hasActiveGroup: !!activeGroup, hasDestination: !!destination, routeLoading, hasRoute: !!route })}
         onPress={findBuddies}
         loading={matching}
         disabled={!verified || !route || !!activeGroup}
@@ -205,6 +206,22 @@ export default function WalkScreen() {
       <SafetyBar />
     </Screen>
   );
+}
+
+/** Tells the user what's missing instead of showing a silently disabled button. */
+function findButtonTitle(s: {
+  verified: boolean;
+  hasActiveGroup: boolean;
+  hasDestination: boolean;
+  routeLoading: boolean;
+  hasRoute: boolean;
+}) {
+  if (!s.verified) return 'Waiting on ID verification';
+  if (s.hasActiveGroup) return 'You already have a walk in progress';
+  if (!s.hasDestination) return 'Tap the map to set your destination';
+  if (s.routeLoading) return 'Finding a walking route…';
+  if (!s.hasRoute) return 'No route found — try another spot';
+  return 'Find walking buddies';
 }
 
 function minutesFromNow(minutes: number) {

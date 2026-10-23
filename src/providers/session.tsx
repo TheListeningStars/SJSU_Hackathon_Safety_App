@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, use, useCallback, useEffect, useState, type PropsWithChildren } from 'react';
+import { AppState } from 'react-native';
 
 import { fetchProfile, type Profile } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +49,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
     });
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
+
+  // Re-check the profile when the app comes back to the foreground, so an ID approval
+  // made by a reviewer shows up without a restart.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && session) loadProfile(session);
+    });
+    return () => sub.remove();
+  }, [loadProfile, session]);
 
   const refreshProfile = useCallback(() => loadProfile(session), [loadProfile, session]);
   const signOut = useCallback(async () => {

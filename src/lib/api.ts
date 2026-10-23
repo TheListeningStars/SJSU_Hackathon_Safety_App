@@ -50,7 +50,10 @@ export type GroupDetails = {
   depart_at: string;
   started_at: string | null;
   meetup_point: Omit<MeetupPoint, 'is_staffed'>;
-  my_route: [number, number][];
+  /** The group walks along one member's route (the anchor). True when that's you or you're alone. */
+  is_anchor: boolean;
+  /** Path you walk with the group: your own route if anchor, else the anchor's route up to your split. */
+  shared_route: [number, number][];
   my_destination: { label: string | null; lat: number; lng: number };
   members: GroupMember[];
 };

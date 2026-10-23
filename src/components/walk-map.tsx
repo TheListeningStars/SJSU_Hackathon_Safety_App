@@ -15,6 +15,8 @@ export type MapPin = LatLng & {
 export type WalkMapProps = {
   pins: MapPin[];
   route?: LatLng[];
+  /** Leg walked alone after leaving the group; drawn dashed. */
+  soloRoute?: LatLng[];
   onPinPress?: (id: string) => void;
   onMapPress?: (coordinate: LatLng) => void;
   height?: number;
@@ -23,7 +25,7 @@ export type WalkMapProps = {
 // Default view: SJSU main campus.
 const CAMPUS = { latitude: 37.3352, longitude: -121.8811, latitudeDelta: 0.015, longitudeDelta: 0.015 };
 
-export function WalkMap({ pins, route, onPinPress, onMapPress, height = 320 }: WalkMapProps) {
+export function WalkMap({ pins, route, soloRoute, onPinPress, onMapPress, height = 320 }: WalkMapProps) {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
   const colors: Record<MapPin['kind'], string> = {
@@ -36,9 +38,9 @@ export function WalkMap({ pins, route, onPinPress, onMapPress, height = 320 }: W
   };
 
   // Keep the route and pins in view when they change.
-  const fitKey = [...(route ?? []), ...pins].map((p) => `${p.latitude},${p.longitude}`).join('|');
+  const fitKey = [...(route ?? []), ...(soloRoute ?? []), ...pins].map((p) => `${p.latitude},${p.longitude}`).join('|');
   useEffect(() => {
-    const coords = [...(route ?? []), ...pins];
+    const coords = [...(route ?? []), ...(soloRoute ?? []), ...pins];
     if (coords.length > 1) {
       mapRef.current?.fitToCoordinates(coords, {
         edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
@@ -63,6 +65,9 @@ export function WalkMap({ pins, route, onPinPress, onMapPress, height = 320 }: W
       onPress={onMapPress ? handlePress : undefined}>
       {route && route.length > 1 && (
         <Polyline coordinates={route} strokeColor={theme.accent} strokeWidth={5} />
+      )}
+      {soloRoute && soloRoute.length > 1 && (
+        <Polyline coordinates={soloRoute} strokeColor={theme.accent} strokeWidth={4} lineDashPattern={[8, 8]} />
       )}
       {pins.map((pin) => (
         <Marker

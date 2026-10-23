@@ -25,7 +25,7 @@ src/app/                    Expo Router screens
   _layout.tsx               Root Stack + auth guards (Stack.Protected): sign-in → onboarding → (tabs)
   sign-in.tsx               .edu email → one-time code (supabase.auth.signInWithOtp / verifyOtp)
   onboarding.tsx            name, avatar, contact info, ID photo + selfie → submit_id_verification
-  (tabs)/index.tsx          pick meetup point + destination → Directions route → create request → join group
+  (tabs)/index.tsx          pick meetup point + destination → Routes API walking route → create request → join group
   (tabs)/buddies.tsx        mutual contacts (get_mutual_contacts)
   (tabs)/profile.tsx        profile, contact info, sign out
   group/[id].tsx            live group: members, split points, confirm/start/arrive, live location
@@ -33,7 +33,7 @@ src/app/                    Expo Router screens
 src/lib/
   supabase.ts               Supabase client (session in expo-sqlite localStorage)
   api.ts                    ALL database access: typed wrappers around tables and RPCs
-  directions.ts             Google Directions (walking) + polyline decoding; straight-line fallback with no key
+  directions.ts             Google Routes API (walking) + polyline decoding; straight-line fallback with no key
   images.ts                 image picker, upload to Storage, signed avatar URLs
 src/providers/session.tsx   session + profile context, isOnboarded()
 src/components/             UI kit: Screen, Card, Field, Button, Avatar, SafetyBar, WalkMap (+ .web fallback)
@@ -46,8 +46,9 @@ supabase/tests/             SQL scenario test against plain PostGIS (see "Testin
 | RPC | Purpose |
 | --- | --- |
 | `create_walk_request` | Stores destination and route (GeoJSON `[[lng,lat],…]`); requires verified status |
-| `find_or_create_group` | Joins the forming group with the most route overlap (same meetup point, ±15 min, max 4) or creates one |
-| `recompute_split_points` | Internal. Each member stays with the group while another member's route is within 40 m, then peels off |
+| `find_or_create_group` | Joins the best forming group (same meetup point, ±15 min, max 4) where nobody's trip grows >35% and the newcomer walks a real stretch together; otherwise creates one |
+| `recompute_split_points` | Internal (0002). Picks an anchor member; the group walks the anchor's route and each member splits at the closest point to home, never within ~100 m of anyone's home |
+| `plan_with_anchor` / `best_plan` | Internal (0002). Score a group plan for a given anchor: split points, distance together/alone, detour ratio |
 | `get_group_details` | Everything the group screen shows, with privacy filtering applied |
 | `confirm_group` / `start_walk` / `leave_group` / `mark_arrived` | Group lifecycle: `forming → walking → completed` (or `cancelled`) |
 | `set_contact_share` / `get_share_status` / `get_mutual_contacts` | Mutual opt-in contact sharing |
@@ -57,7 +58,7 @@ Member status: `joined → confirmed → arrived` (or `left`).
 
 ## Changing the database
 
-- `0001_packtrack.sql` has **already been applied** to the team's Supabase project (`ivsgdxmiuahfzfhxkook`). **Never edit it.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
+- `0001_packtrack.sql` and `0002_shared_path_matching.sql` have **already been applied** to the team's Supabase project (`ivsgdxmiuahfzfhxkook`). **Never edit applied migrations.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
 - New RPCs: use `security definer`, `set search_path = public, extensions`, check `auth.uid()`, and add a typed wrapper in `src/lib/api.ts`. Internal helpers must `revoke execute … from public, anon, authenticated`.
 - PostGIS is installed in the `extensions` schema. Return lat/lng as plain numbers (`st_y(geom)`, `st_x(geom)`) because PostgREST returns geometry as hex.
 
@@ -74,12 +75,13 @@ Database logic: `supabase/tests/scenario.sql` runs the whole flow (signup rules,
 docker run -d --name pt-pg -e POSTGRES_PASSWORD=pw postgis/postgis:16-3.4
 docker cp supabase/tests/00_supabase_stubs.sql pt-pg:/tmp/a.sql
 docker cp supabase/migrations/0001_packtrack.sql pt-pg:/tmp/b.sql
+docker cp supabase/migrations/0002_shared_path_matching.sql pt-pg:/tmp/b2.sql
 docker cp supabase/tests/scenario.sql pt-pg:/tmp/c.sql
-for f in a b c; do docker exec pt-pg psql -U postgres -v ON_ERROR_STOP=1 -f /tmp/$f.sql; done
+for f in a b b2 c; do docker exec pt-pg psql -U postgres -v ON_ERROR_STOP=1 -f /tmp/$f.sql; done
 docker rm -f pt-pg
 ```
 
-Every check prints `NOTICE: PASS: …`; a failure raises `FAIL: …`. Apply new migrations after `b.sql` and extend `scenario.sql` when you change matching or privacy logic. (On Git Bash for Windows, `export MSYS_NO_PATHCONV=1` first.)
+Every check prints `NOTICE: PASS: …`; a failure raises `FAIL: …`. Apply new migrations after `b2.sql` and extend `scenario.sql` when you change matching or privacy logic. (On Git Bash for Windows, `export MSYS_NO_PATHCONV=1` first.)
 
 ## Conventions
 
@@ -99,7 +101,7 @@ Every check prints `NOTICE: PASS: …`; a failure raises `FAIL: …`. Apply new 
 ## Known gaps / ideas
 
 - ID review is manual. Production should use Stripe Identity or Persona, with a webhook calling `review_id_verification`.
-- The Google Directions key is used from the client; move it to a Supabase Edge Function before launch.
+- The Google Routes API key is used from the client; move it to a Supabase Edge Function before launch.
 - No push notifications yet (e.g. "someone joined your group"). The group screen updates through Realtime only while it's open.
 
 ## Expo has changed — do not trust your training data
