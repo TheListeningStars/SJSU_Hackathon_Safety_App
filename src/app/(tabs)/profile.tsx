@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -95,6 +96,7 @@ export default function ProfileScreen() {
         <Button title={saved ? 'Saved' : 'Save contact info'} onPress={saveContact} loading={saving} />
       </Card>
 
+      <Button title="Campus safety dashboard" variant="secondary" onPress={() => router.push('/admin')} />
       <ErrorText message={error} />
       <Button title="Sign out" variant="secondary" onPress={signOut} />
     </Screen>

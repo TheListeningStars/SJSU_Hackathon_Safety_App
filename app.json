@@ -45,7 +45,7 @@
         "expo-image-picker",
         {
           "photosPermission": "PackTrack uses your photos to set your profile picture.",
-          "cameraPermission": "PackTrack uses the camera to photograph your student/government ID and take a verification selfie.",
+          "cameraPermission": "PackTrack uses the camera for your verification photos and to photograph problems you report on campus.",
           "microphonePermission": false
         }
       ]

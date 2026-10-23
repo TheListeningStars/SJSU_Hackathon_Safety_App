@@ -12,6 +12,17 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 6. **Walk**: the group follows one shared path, and each person peels off at the point closest to their home. For privacy, splits happen at least ~100 m before anyone's home. Live locations are shared over a private Realtime channel only group members can join. SafeWalk call/text and 911 buttons are always on screen.
 7. **After the walk**: everyone taps "I'm home safe." Then each person can choose who to share contact info with. Info is revealed only when both people opt in.
 
+## Reports, danger zones and rerouting
+
+8. **Report a problem** (plan screen or during a walk): photo + a few words. If it sounds like someone is in danger, the app asks "Is anyone in danger right now?" and puts 911 / UPD first; emergencies never go into a repair queue.
+9. **EAiSER** classifies the report (issue type, severity, building, where it goes, status). Until we have the EAiSER for Campuses API, `src/lib/eaiser.ts` runs an on-device stand-in with the same output, marked "EAiSER simulated". Set `EXPO_PUBLIC_EAISER_URL` / `EXPO_PUBLIC_EAISER_KEY` to call the real one.
+10. **Danger zone**: `submit_incident` stores it with a radius by category (merging duplicates within 50 m) and Realtime pushes it to every phone.
+11. **Rerouting**: the group walks the anchor's route, so the anchor's phone (the only one that knows where that route ends) reroutes the shared path around new zones (`src/lib/safety.ts`) and saves it with `update_my_route`; split points move and everyone's map updates over Realtime ("Group route updated to avoid broken lighting ahead"). Each other member's phone reroutes their own private solo leg home.
+12. **Dashboard** (Profile → Campus safety dashboard): active problems, students walking, reroutes. Staff listed in `safety_admins` can mark problems In progress / Resolved, which removes the zone.
+
+Setup: run `supabase/migrations/0003_incidents.sql` in the SQL Editor after 0001 and 0002. To make yourself staff:
+`insert into public.safety_admins select id from auth.users where email = 'you@sjsu.edu';`
+
 ## Stack
 
 | Layer | Pick |
