@@ -1,0 +1,150 @@
+// All database access for the app goes through this file.
+// Privacy is enforced by RLS and security-definer RPCs in supabase/migrations/, so the client
+// never writes walk/group/share tables directly. See "Privacy rules" in AGENTS.md before changing anything here.
+
+import { supabase } from '@/lib/supabase';
+
+export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected';
+
+export type Profile = {
+  id: string;
+  first_name: string | null;
+  university: string | null;
+  avatar_path: string | null;
+  verification_status: VerificationStatus;
+};
+
+export type ContactInfo = {
+  phone: string | null;
+  email: string | null;
+  instagram: string | null;
+};
+
+export type MeetupPoint = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_staffed: boolean;
+  lat: number;
+  lng: number;
+};
+
+export type GroupStatus = 'forming' | 'walking' | 'completed' | 'cancelled';
+export type MemberStatus = 'joined' | 'confirmed' | 'arrived' | 'left';
+
+export type GroupMember = {
+  user_id: string;
+  is_me: boolean;
+  first_name: string | null;
+  avatar_path: string | null;
+  status: MemberStatus;
+  split_order: number | null;
+  split_lat: number | null;
+  split_lng: number | null;
+  walk_alone_m: number | null;
+};
+
+export type GroupDetails = {
+  id: string;
+  status: GroupStatus;
+  depart_at: string;
+  started_at: string | null;
+  meetup_point: Omit<MeetupPoint, 'is_staffed'>;
+  my_route: [number, number][];
+  my_destination: { label: string | null; lat: number; lng: number };
+  members: GroupMember[];
+};
+
+export type ShareStatus = {
+  user_id: string;
+  first_name: string | null;
+  avatar_path: string | null;
+  i_shared: boolean;
+  mutual: boolean;
+  phone: string | null;
+  email: string | null;
+  instagram: string | null;
+};
+
+export type MutualContact = ContactInfo & {
+  user_id: string;
+  first_name: string | null;
+  avatar_path: string | null;
+  connected_at: string;
+};
+
+async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data as T;
+}
+
+export async function fetchProfile(userId: string): Promise<Profile | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, first_name, university, avatar_path, verification_status')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateProfile(userId: string, fields: Partial<Pick<Profile, 'first_name' | 'avatar_path'>>) {
+  const { error } = await supabase.from('profiles').update(fields).eq('id', userId);
+  if (error) throw new Error(error.message);
+}
+
+export async function fetchContactInfo(userId: string): Promise<ContactInfo | null> {
+  const { data, error } = await supabase
+    .from('contact_info')
+    .select('phone, email, instagram')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateContactInfo(userId: string, fields: Partial<ContactInfo>) {
+  const { error } = await supabase
+    .from('contact_info')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+  if (error) throw new Error(error.message);
+}
+
+export const listMeetupPoints = () => rpc<MeetupPoint[]>('list_meetup_points');
+
+export const submitIdVerification = (idFrontPath: string, selfiePath: string) =>
+  rpc<void>('submit_id_verification', { p_id_front_path: idFrontPath, p_selfie_path: selfiePath });
+
+export const createWalkRequest = (args: {
+  meetupPointId: string;
+  destLat: number;
+  destLng: number;
+  destLabel: string;
+  route: [number, number][];
+  departAt: Date;
+}) =>
+  rpc<string>('create_walk_request', {
+    p_meetup_point_id: args.meetupPointId,
+    p_dest_lat: args.destLat,
+    p_dest_lng: args.destLng,
+    p_dest_label: args.destLabel,
+    p_route: args.route,
+    p_depart_at: args.departAt.toISOString(),
+  });
+
+export const findOrCreateGroup = (requestId: string) =>
+  rpc<string>('find_or_create_group', { p_request_id: requestId });
+
+export const getActiveGroup = () => rpc<string | null>('get_active_group');
+export const getGroupDetails = (groupId: string) => rpc<GroupDetails>('get_group_details', { p_group: groupId });
+export const confirmGroup = (groupId: string) => rpc<void>('confirm_group', { p_group: groupId });
+export const startWalk = (groupId: string) => rpc<void>('start_walk', { p_group: groupId });
+export const leaveGroup = (groupId: string) => rpc<void>('leave_group', { p_group: groupId });
+export const markArrived = (groupId: string) => rpc<void>('mark_arrived', { p_group: groupId });
+
+export const getShareStatus = (groupId: string) => rpc<ShareStatus[]>('get_share_status', { p_group: groupId });
+export const setContactShare = (groupId: string, toUser: string, share: boolean) =>
+  rpc<void>('set_contact_share', { p_group: groupId, p_to_user: toUser, p_share: share });
+export const getMutualContacts = () => rpc<MutualContact[]>('get_mutual_contacts');

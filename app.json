@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "packtrack-app",
+    "name": "PackTrack",
     "slug": "packtrack-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -31,6 +31,22 @@
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "PackTrack shares your location with your walking group while you walk home together."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PackTrack uses your photos to set your profile picture.",
+          "cameraPermission": "PackTrack uses the camera to photograph your student/government ID and take a verification selfie.",
+          "microphonePermission": false
         }
       ]
     ],

@@ -1,56 +1,91 @@
-# Welcome to your Expo app 👋
+# PackTrack
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Pairs verified university students so nobody walks home from campus alone. Students meet at a safe meetup point, get matched with others heading the same way, walk together, and each person peels off at the point closest to their own destination.
 
-## Get started
+## How it works
 
-1. Install dependencies
+1. **Sign in** with a `.edu` email (one-time code). Non-university emails are rejected by the database.
+2. **Verify** with a profile photo, a photo of a government ID and a selfie. ID images go to a private bucket that only reviewers can read. Matching stays locked until a reviewer approves.
+3. **Plan a walk**: pick a meetup point, tap your destination on the map and choose when you're leaving. The app gets a walking route from Google Directions.
+4. **Get matched**: PostGIS joins you to a forming group at the same meetup point (departing within 15 minutes, max 4 people) whose routes overlap yours the most.
+5. **Confirm**: confirming shares your profile photo with that group only. You see someone's photo once you've both confirmed.
+6. **Walk**: everyone stays together while at least one other person's route still runs alongside theirs, then peels off at their split point. Live locations are shared over a private Realtime channel only group members can join. SafeWalk call/text and 911 buttons are always on screen.
+7. **After the walk**: everyone taps "I'm home safe." Then each person can choose who to share contact info with. Info is revealed only when both people opt in.
 
-   ```bash
-   npm install
-   ```
+## Stack
 
-2. Start the app
+| Layer | Pick |
+| --- | --- |
+| App | Expo SDK 58, Expo Router, TypeScript |
+| Maps & location | `react-native-maps`, `expo-location` |
+| Backend | Supabase (Postgres + PostGIS + Realtime + Storage) |
+| Routes | Google Directions API (walking mode) |
+| SafeWalk call/text | `expo-linking` (`tel:` / `sms:`) |
 
-   ```bash
-   npx expo start
-   ```
+## Setup
 
-In the output, you'll find options to open the app in a
+### 1. Supabase
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+1. Create a project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor**, paste in [`supabase/migrations/0001_packtrack.sql`](supabase/migrations/0001_packtrack.sql) and run it. This creates the tables, privacy rules, storage buckets, Realtime policies and SJSU meetup points.
+3. **Authentication → Email Templates → Magic Link**: add `{{ .Token }}` to the template so the email contains the 6-digit code the app asks for.
+4. **Authentication → Sign In / Providers**: make sure Email is enabled.
+5. **Realtime → Settings**: turn off "Allow public access" if you want only private channels (the app uses private ones).
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### 2. Google Directions (optional but recommended)
 
-## Get a fresh project
+Enable the **Directions API** in Google Cloud and create an API key. Without a key the app falls back to straight-line routes, which still works for a demo but makes matching less accurate.
 
-When you're ready, run:
+### 3. Environment
 
 ```bash
-npm run reset-project
+cp .env.example .env.local
+# fill in EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY, EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+### 4. Run
 
-### Other setup steps
+```bash
+npm install
+npx expo start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Scan the QR code with **Expo Go**. The map and camera need a phone (or simulator). The web build shows a simplified list instead of the map.
 
-## Learn more
+### 5. Approve students (reviewer)
 
-To learn more about developing your project with Expo, look at the following resources:
+New users land in "ID under review". To approve or reject them, run this in the Supabase SQL editor:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```sql
+select public.review_id_verification('student@sjsu.edu', true);   -- approve
+select public.review_id_verification('student@sjsu.edu', false);  -- reject (they're asked to resubmit)
+```
 
-## Join the community
+ID photos are in **Storage → id-documents/<user id>/**.
 
-Join our community of developers creating universal apps.
+## Demo with two people
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+1. Sign up two `.edu` accounts on two phones and approve both with the SQL above.
+2. Both pick the same meetup point, drop destinations in roughly the same direction and choose the same departure time.
+3. Both land in the same group. Each taps **Confirm**, then **Start walking**, then **I'm home safe**, then **Share contact info**.
+
+## Project layout
+
+```
+src/app/              screens (Expo Router)
+  sign-in.tsx         .edu email + one-time code
+  onboarding.tsx      profile photo, contact info, ID + selfie
+  (tabs)/index.tsx    plan a walk and get matched
+  (tabs)/buddies.tsx  people you mutually shared with
+  (tabs)/profile.tsx  your profile and contact info
+  group/[id].tsx      live group: members, split points, live locations
+  share/[id].tsx      opt-in contact sharing after a walk
+src/lib/              Supabase client, API calls, Directions, image upload
+supabase/migrations/  database schema, privacy rules and matching logic
+```
+
+## Known limitations
+
+- ID review is manual. For production, swap in a provider such as Stripe Identity or Persona and have its webhook call `review_id_verification`.
+- The Google key is used from the client. Before launch, move Directions calls into a Supabase Edge Function so the key stays server-side.
+- Meetup point coordinates and the SafeWalk number (`src/constants/theme.ts`) are approximate. Check them before demoing.

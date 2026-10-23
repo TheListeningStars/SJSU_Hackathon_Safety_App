@@ -1,0 +1,100 @@
+export type LatLng = { latitude: number; longitude: number };
+
+export type WalkingRoute = {
+  points: LatLng[];
+  distanceM: number;
+  durationS: number;
+  /** True when no Google key is configured and we drew a straight line instead. */
+  isFallback: boolean;
+};
+
+const googleKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const WALKING_SPEED_MPS = 1.35;
+
+export async function getWalkingRoute(from: LatLng, to: LatLng): Promise<WalkingRoute> {
+  if (!googleKey) {
+    const distanceM = distanceBetween(from, to);
+    return {
+      points: [from, to],
+      distanceM,
+      durationS: distanceM / WALKING_SPEED_MPS,
+      isFallback: true,
+    };
+  }
+
+  const params = new URLSearchParams({
+    origin: `${from.latitude},${from.longitude}`,
+    destination: `${to.latitude},${to.longitude}`,
+    mode: 'walking',
+    key: googleKey,
+  });
+  const res = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`);
+  const json = await res.json();
+  if (json.status !== 'OK' || !json.routes?.length) {
+    throw new Error(json.error_message ?? `Could not find a walking route (${json.status})`);
+  }
+
+  const route = json.routes[0];
+  const leg = route.legs[0];
+  return {
+    points: decodePolyline(route.overview_polyline.points),
+    distanceM: leg.distance.value,
+    durationS: leg.duration.value,
+    isFallback: false,
+  };
+}
+
+/** Google encoded polyline → coordinates. */
+export function decodePolyline(encoded: string): LatLng[] {
+  const points: LatLng[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    for (const axis of ['lat', 'lng'] as const) {
+      let result = 0;
+      let shift = 0;
+      let byte: number;
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (axis === 'lat') lat += delta;
+      else lng += delta;
+    }
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return points;
+}
+
+/** Coordinates in the [lng, lat] order PostGIS / GeoJSON expects. */
+export function toGeoJsonCoordinates(points: LatLng[]): [number, number][] {
+  return points.map((p) => [p.longitude, p.latitude]);
+}
+
+export function fromGeoJsonCoordinates(coords: [number, number][] | null | undefined): LatLng[] {
+  return (coords ?? []).map(([longitude, latitude]) => ({ latitude, longitude }));
+}
+
+export function distanceBetween(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+export function formatDistance(meters: number): string {
+  const miles = meters / 1609.34;
+  return miles < 0.1 ? `${Math.round(meters * 3.281)} ft` : `${miles.toFixed(1)} mi`;
+}
+
+export function formatDuration(seconds: number): string {
+  return `${Math.max(1, Math.round(seconds / 60))} min`;
+}
