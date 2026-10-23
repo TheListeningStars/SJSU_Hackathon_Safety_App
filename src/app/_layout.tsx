@@ -44,6 +44,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="group/[id]" options={{ headerShown: true, title: 'Walking group' }} />
         <Stack.Screen name="share/[id]" options={{ headerShown: true, title: 'Stay in touch' }} />
+        <Stack.Screen name="admin" options={{ headerShown: true, title: 'Campus safety dashboard' }} />
       </Stack.Protected>
     </Stack>
   );

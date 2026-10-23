@@ -7,21 +7,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { SafetyBar } from '@/components/safety-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WalkMap, type MapPin } from '@/components/walk-map';
+import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
+import { useIncidents } from '@/hooks/use-incidents';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { createWalkRequest, findOrCreateGroup, getActiveGroup, listMeetupPoints, type MeetupPoint } from '@/lib/api';
 import {
   formatDistance,
   formatDuration,
-  getWalkingRoute,
   toGeoJsonCoordinates,
   type LatLng,
   type WalkingRoute,
 } from '@/lib/directions';
+import { blockingZones, CATEGORY_LABEL, routeAvoidingZones } from '@/lib/safety';
 import { useSession } from '@/providers/session';
 
 const DEPART_OPTIONS = [
@@ -43,6 +45,9 @@ export default function WalkScreen() {
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [matching, setMatching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [avoiding, setAvoiding] = useState<string[]>([]);
+  const [reportOpen, setReportOpen] = useState(false);
+  const { zones, incidents } = useIncidents();
 
   const verified = profile?.verification_status === 'verified';
   const meetup = points.find((p) => p.id === meetupId) ?? null;
@@ -71,11 +76,16 @@ export default function WalkScreen() {
   const updateRoute = async (from: MeetupPoint | null, to: LatLng | null) => {
     const requestNo = ++routeRequest.current;
     setRoute(null);
+    setAvoiding([]);
     if (!from || !to) return;
     setRouteLoading(true);
     try {
-      const r = await getWalkingRoute({ latitude: from.lat, longitude: from.lng }, to);
-      if (requestNo === routeRequest.current) setRoute(r);
+      // Plan around anything already reported on the way.
+      const plan = await routeAvoidingZones({ latitude: from.lat, longitude: from.lng }, to, zones);
+      if (requestNo === routeRequest.current) {
+        setRoute(plan.route);
+        setAvoiding(plan.avoided.map((z) => CATEGORY_LABEL[z.category] ?? z.title));
+      }
     } catch (e) {
       if (requestNo === routeRequest.current) setError((e as Error).message);
     } finally {
@@ -123,6 +133,25 @@ export default function WalkScreen() {
     }
   };
 
+  // A new report lands on the route I'm planning: plan again around it.
+  const blocked = route ? blockingZones(route.points, zones).map((z) => z.id).join(',') : '';
+  useEffect(() => {
+    if (!blocked) return;
+    const t = setTimeout(() => updateRoute(meetup, destination), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocked]);
+
+  const mapZones: MapZone[] = zones.map((z) => ({
+    id: z.id,
+    latitude: z.lat,
+    longitude: z.lng,
+    radius: z.radius_m,
+    title: z.title,
+    description: CATEGORY_LABEL[z.category],
+    severity: z.severity,
+  }));
+
   const pins: MapPin[] = [
     ...points.map<MapPin>((p) => ({
       id: p.id,
@@ -168,7 +197,7 @@ export default function WalkScreen() {
       </ScrollView>
 
       <ThemedText type="smallBold">2. Tap the map where you&apos;re headed</ThemedText>
-      <WalkMap pins={pins} route={route?.points} onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)} onMapPress={pickDestination} />
+      <WalkMap pins={pins} route={route?.points} zones={mapZones} onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)} onMapPress={pickDestination} />
 
       {destination && (
         <Card>
@@ -180,6 +209,11 @@ export default function WalkScreen() {
                 ? `${formatDistance(route.distanceM)} · about ${formatDuration(route.durationS)} from ${meetup?.name}`
                 : 'No route yet'}
           </ThemedText>
+          {avoiding.length > 0 && (
+            <ThemedText type="small" themeColor="warning">
+              Routed around {avoiding.join(', ')} reported by other students.
+            </ThemedText>
+          )}
           {route?.isFallback && (
             <ThemedText type="small" themeColor="warning">
               No Google Maps key set, so this is a straight-line estimate. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY for real walking routes.
@@ -203,7 +237,23 @@ export default function WalkScreen() {
         disabled={!verified || !route || !!activeGroup}
       />
 
+      <Card>
+        <ThemedText type="smallBold">
+          {incidents.length ? `${incidents.length} problem${incidents.length === 1 ? '' : 's'} reported on campus right now` : 'No problems reported right now'}
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          See something broken or unsafe on the way? Report it: it goes to the people who fix it, and walkers nearby are
+          rerouted around it.
+        </ThemedText>
+        <Button variant="secondary" title="Report a problem" onPress={() => setReportOpen(true)} />
+      </Card>
+
       <SafetyBar />
+      <ReportSheet
+        visible={reportOpen}
+        onClose={() => setReportOpen(false)}
+        fallbackLocation={meetup ? { latitude: meetup.lat, longitude: meetup.lng } : null}
+      />
     </Screen>
   );
 }

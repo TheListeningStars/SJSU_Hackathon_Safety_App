@@ -151,3 +151,76 @@ export const getShareStatus = (groupId: string) => rpc<ShareStatus[]>('get_share
 export const setContactShare = (groupId: string, toUser: string, share: boolean) =>
   rpc<void>('set_contact_share', { p_group: groupId, p_to_user: toUser, p_share: share });
 export const getMutualContacts = () => rpc<MutualContact[]>('get_mutual_contacts');
+
+// ---------------------------------------------------------------------------
+// Incidents, danger zones and rerouting (supabase/migrations/0003_incidents.sql)
+// ---------------------------------------------------------------------------
+
+export type Incident = {
+  id: string;
+  category: string;
+  title: string;
+  summary: string | null;
+  severity: 'low' | 'medium' | 'high';
+  building: string | null;
+  route_to: string | null;
+  eaiser_status: 'submitted' | 'in_progress' | 'resolved';
+  eaiser_simulated: boolean;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  reports_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SubmitIncidentResult = { merged: boolean; incident: Incident };
+
+export const submitIncident = (args: {
+  category: string;
+  title: string;
+  summary: string;
+  severity: string;
+  building: string | null;
+  routeTo: string | null;
+  eaiserId: string | null;
+  eaiserSimulated: boolean;
+  lat: number;
+  lng: number;
+  description: string;
+  photoPath: string | null;
+}) =>
+  rpc<SubmitIncidentResult>('submit_incident', {
+    p_category: args.category,
+    p_title: args.title,
+    p_summary: args.summary,
+    p_severity: args.severity,
+    p_building: args.building,
+    p_route_to: args.routeTo,
+    p_eaiser_id: args.eaiserId,
+    p_eaiser_simulated: args.eaiserSimulated,
+    p_lat: args.lat,
+    p_lng: args.lng,
+    p_description: args.description,
+    p_photo_path: args.photoPath,
+  });
+
+export const listActiveIncidents = () => rpc<Incident[]>('list_active_incidents');
+
+/** `route` null = only log the reroute (solo leg rerouted on this phone). */
+export const updateMyRoute = (groupId: string, route: [number, number][] | null, incidentId: string | null, addedM: number) =>
+  rpc<void>('update_my_route', { p_group: groupId, p_route: route, p_incident: incidentId, p_added_m: addedM });
+
+export type SafetyOverview = {
+  active_incidents: number;
+  reports_today: number;
+  active_groups: number;
+  walking_now: number;
+  reroutes_last_hour: number;
+  groups_rerouted_last_hour: number;
+  is_admin: boolean;
+};
+
+export const getSafetyOverview = () => rpc<SafetyOverview>('get_safety_overview');
+export const setIncidentStatus = (incidentId: string, status: Incident['eaiser_status']) =>
+  rpc<void>('set_incident_status', { p_incident: incidentId, p_status: status });

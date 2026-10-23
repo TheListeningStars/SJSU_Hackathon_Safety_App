@@ -11,11 +11,14 @@ export type WalkingRoute = {
 const googleKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 const WALKING_SPEED_MPS = 1.35;
 
-export async function getWalkingRoute(from: LatLng, to: LatLng): Promise<WalkingRoute> {
+/** `via` points are pass-through waypoints (used to detour around reported problems). */
+export async function getWalkingRoute(from: LatLng, to: LatLng, via: LatLng[] = []): Promise<WalkingRoute> {
   if (!googleKey) {
-    const distanceM = distanceBetween(from, to);
+    const points = [from, ...via, to];
+    let distanceM = 0;
+    for (let i = 1; i < points.length; i++) distanceM += distanceBetween(points[i - 1], points[i]);
     return {
-      points: [from, to],
+      points,
       distanceM,
       durationS: distanceM / WALKING_SPEED_MPS,
       isFallback: true,
@@ -33,6 +36,8 @@ export async function getWalkingRoute(from: LatLng, to: LatLng): Promise<Walking
     body: JSON.stringify({
       origin: { location: { latLng: from } },
       destination: { location: { latLng: to } },
+      // Pass-through points (no stop) used to detour around reported problems.
+      ...(via.length ? { intermediates: via.map((p) => ({ via: true, location: { latLng: p } })) } : {}),
       travelMode: 'WALK',
     }),
   });

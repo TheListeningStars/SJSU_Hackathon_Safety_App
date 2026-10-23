@@ -4,15 +4,17 @@
 
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, StyleSheet, Vibration, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
+import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { SafetyBar } from '@/components/safety-bar';
 import { ThemedText } from '@/components/themed-text';
-import { WalkMap, type MapPin } from '@/components/walk-map';
+import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
+import { useIncidents } from '@/hooks/use-incidents';
 import { Spacing, type ThemeColor } from '@/constants/theme';
 import {
   confirmGroup,
@@ -20,11 +22,21 @@ import {
   leaveGroup,
   markArrived,
   startWalk,
+  updateMyRoute,
   type GroupDetails,
   type GroupMember,
   type MemberStatus,
 } from '@/lib/api';
-import { formatDistance, fromGeoJsonCoordinates, getWalkingRoute, type WalkingRoute } from '@/lib/directions';
+import {
+  distanceBetween,
+  formatDistance,
+  formatDuration,
+  fromGeoJsonCoordinates,
+  toGeoJsonCoordinates,
+  type LatLng,
+  type WalkingRoute,
+} from '@/lib/directions';
+import { blockingZones, CATEGORY_LABEL, closestApproach, routeAvoidingZones } from '@/lib/safety';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session';
 
@@ -44,6 +56,12 @@ export default function GroupScreen() {
   const [walkers, setWalkers] = useState<Record<string, LiveWalker>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reroute, setReroute] = useState<{ text: string; previous: LatLng[] } | null>(null);
+  const { zones } = useIncidents();
+  const myPosition = useRef<LatLng | null>(null);
+  const handledZones = useRef(new Set<string>());
+  const rerouting = useRef(false);
 
   const load = useCallback(() => {
     getGroupDetails(id)
@@ -69,23 +87,39 @@ export default function GroupScreen() {
   const shareMyLocation = isWalking && me?.status === 'confirmed';
 
   // After your split point you walk home alone; fetch a real walking route for that leg.
-  // (Anchors already have their full route in shared_route.)
+  // (Anchors already have their full route in shared_route.) The solo leg is private to this phone,
+  // so it is also where we route around reported problems for non-anchors.
   const soloKey =
     group && !group.is_anchor && me?.split_lat != null && me.split_lng != null
-      ? `${me.split_lat},${me.split_lng},${group.my_destination.lat},${group.my_destination.lng}`
+      ? `${me.split_lat},${me.split_lng},${group.my_destination.lat},${group.my_destination.lng}|${zones.map((z) => z.id).join(',')}`
       : null;
   const [solo, setSolo] = useState<{ key: string; route: WalkingRoute } | null>(null);
   useEffect(() => {
     if (!soloKey) return;
     let cancelled = false;
-    const [fromLat, fromLng, toLat, toLng] = soloKey.split(',').map(Number);
-    getWalkingRoute({ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng })
-      .then((route) => !cancelled && setSolo({ key: soloKey, route }))
+    const [fromLat, fromLng, toLat, toLng] = soloKey.split('|')[0].split(',').map(Number);
+    routeAvoidingZones({ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng }, zones)
+      .then(async (plan) => {
+        if (cancelled) return;
+        setSolo({ key: soloKey, route: plan.route });
+        const fresh = plan.avoided.find((z) => !handledZones.current.has(z.id));
+        if (fresh) {
+          handledZones.current.add(fresh.id);
+          setReroute({
+            text: `Your walk home after the split now avoids ${CATEGORY_LABEL[fresh.category] ?? 'a reported problem'}${plan.addedM > 20 ? ` (+${formatDuration(plan.addedM / 1.35)})` : ''}.`,
+            previous: [],
+          });
+          Vibration.vibrate(400);
+          await updateMyRoute(id, null, fresh.id, plan.addedM).catch(() => {});
+        }
+      })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [soloKey]);
+    // zones are captured through soloKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloKey, id]);
   const soloRoute = solo?.key === soloKey ? solo.route : null;
 
   // Live locations go over a private broadcast channel only group members can join (see realtime.messages policies).
@@ -108,6 +142,7 @@ export default function GroupScreen() {
       watcher = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 10_000, distanceInterval: 15 },
         (pos) => {
+          myPosition.current = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
           channel.send({
             type: 'broadcast',
             event: 'location',
@@ -130,6 +165,59 @@ export default function GroupScreen() {
       supabase.removeChannel(channel);
     };
   }, [id, isWalking, shareMyLocation, session, profile?.first_name]);
+
+  // Rerouting the shared path. The group walks the anchor's route, and only the anchor's phone knows
+  // where it ends (routes are private), so the anchor's phone finds a way around a reported problem and
+  // saves it; everyone's split points update and the new shared path reaches the group over Realtime.
+  // Other members get a heads-up; their own solo leg is rerouted above.
+  useEffect(() => {
+    if (!group || rerouting.current) return;
+    const mine = group.members.find((m) => m.is_me);
+    if (!mine || !['joined', 'confirmed'].includes(mine.status) || !['forming', 'walking'].includes(group.status)) return;
+    const route = fromGeoJsonCoordinates(group.shared_route);
+    // Only the part of the path still ahead of me matters once we're walking.
+    const pos = group.status === 'walking' ? myPosition.current : null;
+    const ahead = pos && route.length > 1 ? [pos, ...route.slice(closestApproach(route, pos).seg + 1)] : route;
+    const hits = blockingZones(ahead, zones).filter((z) => !handledZones.current.has(z.id));
+    if (!hits.length) return;
+    rerouting.current = true;
+    hits.forEach((z) => handledZones.current.add(z.id));
+    (async () => {
+      try {
+        const what = CATEGORY_LABEL[hits[0].category] ?? 'a reported problem';
+        if (!group.is_anchor) {
+          setReroute({ text: `Heads up: ${what} reported on your group's path. The route will update for everyone in a moment.`, previous: [] });
+          Vibration.vibrate(400);
+          return;
+        }
+        let from: LatLng = { latitude: group.meetup_point.lat, longitude: group.meetup_point.lng };
+        if (group.status === 'walking') {
+          const last = myPosition.current ?? (await Location.getLastKnownPositionAsync())?.coords;
+          if (last) from = { latitude: last.latitude, longitude: last.longitude };
+        }
+        const to = { latitude: group.my_destination.lat, longitude: group.my_destination.lng };
+        // Already standing in it (e.g. I just reported it): nothing to warn me about.
+        if (hits.every((z) => distanceBetween(from, { latitude: z.lat, longitude: z.lng }) <= z.radius_m)) return;
+        const plan = await routeAvoidingZones(from, to, zones);
+        if (plan.avoided.length) {
+          await updateMyRoute(id, toGeoJsonCoordinates(plan.route.points), plan.avoided[0].id, plan.addedM);
+          setReroute({
+            text: `Group route updated to avoid ${what} ahead${plan.addedM > 20 ? ` (+${formatDuration(plan.addedM / 1.35)})` : ''}.`,
+            previous: route,
+          });
+          Vibration.vibrate(400);
+          load();
+        } else {
+          setReroute({ text: `Heads up: ${what} reported on your way, and there's no way around it. Stay with your group.`, previous: [] });
+          Vibration.vibrate(400);
+        }
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        rerouting.current = false;
+      }
+    })();
+  }, [group, zones, id, load]);
 
   const run = (label: string, action: () => Promise<void>) => async () => {
     setBusy(label);
@@ -207,8 +295,26 @@ export default function GroupScreen() {
       })),
   ];
 
+  const mapZones: MapZone[] = zones.map((z) => ({
+    id: z.id,
+    latitude: z.lat,
+    longitude: z.lng,
+    radius: z.radius_m,
+    title: z.title,
+    description: CATEGORY_LABEL[z.category],
+    severity: z.severity,
+  }));
+
   return (
     <Screen safeTop={false}>
+      {reroute && (
+        <Card>
+          <ThemedText type="smallBold" themeColor="warning">
+            {reroute.text}
+          </ThemedText>
+          <Button compact variant="secondary" title="Got it" onPress={() => setReroute(null)} />
+        </Card>
+      )}
       <Card>
         <ThemedText type="smallBold">{headline(group, others.length)}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
@@ -221,7 +327,17 @@ export default function GroupScreen() {
         )}
       </Card>
 
-      <WalkMap pins={pins} route={fromGeoJsonCoordinates(group.shared_route)} soloRoute={soloRoute?.points} />
+      <WalkMap
+        pins={pins}
+        route={fromGeoJsonCoordinates(group.shared_route)}
+        soloRoute={soloRoute?.points}
+        previousRoute={reroute?.previous}
+        zones={mapZones}
+      />
+
+      {(group.status === 'forming' || group.status === 'walking') && (
+        <Button variant="secondary" title="Report a problem on the way" onPress={() => setReportOpen(true)} />
+      )}
 
       <View style={styles.members}>
         {group.members.map((m) => (
@@ -273,6 +389,11 @@ export default function GroupScreen() {
 
       <ErrorText message={error} />
       <SafetyBar />
+      <ReportSheet
+        visible={reportOpen}
+        onClose={() => setReportOpen(false)}
+        fallbackLocation={{ latitude: group.meetup_point.lat, longitude: group.meetup_point.lng }}
+      />
     </Screen>
   );
 }

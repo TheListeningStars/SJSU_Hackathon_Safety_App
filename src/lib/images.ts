@@ -33,7 +33,7 @@ export async function pickImage(options: {
   return { uri: asset.uri, base64: asset.base64 };
 }
 
-export async function uploadImage(bucket: 'avatars' | 'id-documents', path: string, image: PickedImage) {
+export async function uploadImage(bucket: 'avatars' | 'id-documents' | 'report-photos', path: string, image: PickedImage) {
   const bytes = Uint8Array.from(atob(image.base64), (c) => c.charCodeAt(0));
   const { error } = await supabase.storage
     .from(bucket)
