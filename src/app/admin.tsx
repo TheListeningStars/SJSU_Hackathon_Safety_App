@@ -7,14 +7,14 @@ import { StyleSheet, View } from 'react-native';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
-import { WalkMap, type MapZone } from '@/components/walk-map';
+import { WalkMap } from '@/components/walk-map';
+import { SeverityPill } from '@/components/zone-info';
 import { Spacing } from '@/constants/theme';
 import { useIncidents } from '@/hooks/use-incidents';
 import { getSafetyOverview, setIncidentStatus, type Incident, type SafetyOverview } from '@/lib/api';
-import { CATEGORY_LABEL } from '@/lib/safety';
 
 export default function AdminScreen() {
-  const { incidents, refresh } = useIncidents();
+  const { incidents, mapZones: zones, refresh } = useIncidents();
   const [overview, setOverview] = useState<SafetyOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,15 +40,6 @@ export default function AdminScreen() {
     }
   };
 
-  const zones: MapZone[] = incidents.map((z) => ({
-    id: z.id,
-    latitude: z.lat,
-    longitude: z.lng,
-    radius: z.radius_m,
-    title: z.title,
-    description: CATEGORY_LABEL[z.category],
-    severity: z.severity,
-  }));
 
   return (
     <Screen safeTop={false}>
@@ -69,9 +60,8 @@ export default function AdminScreen() {
       )}
       {incidents.map((i) => (
         <Card key={i.id}>
-          <ThemedText type="smallBold" themeColor={i.severity === 'high' ? 'danger' : 'warning'}>
-            {i.title} · {i.severity}
-          </ThemedText>
+          <ThemedText type="smallBold">{i.title}</ThemedText>
+          <SeverityPill severity={i.severity} />
           <ThemedText type="small" themeColor="textSecondary">
             {i.summary}
           </ThemedText>

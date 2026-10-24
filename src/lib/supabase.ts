@@ -17,6 +17,8 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // PKCE so school Google sign-in can hand the app a code (see sign-in.tsx).
+    flowType: 'pkce',
   },
 });
 

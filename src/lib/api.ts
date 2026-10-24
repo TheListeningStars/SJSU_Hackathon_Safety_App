@@ -12,7 +12,14 @@ export type Profile = {
   university: string | null;
   avatar_path: string | null;
   verification_status: VerificationStatus;
+  /** Private: only used by matching (0004). Locked once the ID is verified. */
+  gender: Gender | null;
+  walk_with: WalkWith;
 };
+
+export type Gender = 'woman' | 'man' | 'nonbinary';
+/** 'same_gender' = only match with students of my gender. */
+export type WalkWith = 'anyone' | 'same_gender';
 
 export type ContactInfo = {
   phone: string | null;
@@ -85,14 +92,14 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, first_name, university, avatar_path, verification_status')
+    .select('id, first_name, university, avatar_path, verification_status, gender, walk_with')
     .eq('id', userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data;
 }
 
-export async function updateProfile(userId: string, fields: Partial<Pick<Profile, 'first_name' | 'avatar_path'>>) {
+export async function updateProfile(userId: string, fields: Partial<Pick<Profile, 'first_name' | 'avatar_path' | 'gender' | 'walk_with'>>) {
   const { error } = await supabase.from('profiles').update(fields).eq('id', userId);
   if (error) throw new Error(error.message);
 }

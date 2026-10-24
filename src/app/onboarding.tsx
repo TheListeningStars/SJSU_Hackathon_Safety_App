@@ -6,8 +6,9 @@ import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
+import { WalkPreference } from '@/components/walk-preference';
 import { Spacing } from '@/constants/theme';
-import { submitIdVerification, updateContactInfo, updateProfile } from '@/lib/api';
+import { submitIdVerification, updateContactInfo, updateProfile, type Gender, type WalkWith } from '@/lib/api';
 import { pickImage, uploadImage, type PickedImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
@@ -19,6 +20,10 @@ export default function OnboardingScreen() {
   const [avatar, setAvatar] = useState<PickedImage | null>(null);
   const [idFront, setIdFront] = useState<PickedImage | null>(null);
   const [selfie, setSelfie] = useState<PickedImage | null>(null);
+  const [pref, setPref] = useState<{ gender: Gender | null; walkWith: WalkWith }>({
+    gender: profile?.gender ?? null,
+    walkWith: profile?.walk_with ?? 'anyone',
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +51,12 @@ export default function OnboardingScreen() {
       const idPath = await uploadImage('id-documents', `${userId}/id-front-${stamp}.jpg`, idFront);
       const selfiePath = await uploadImage('id-documents', `${userId}/selfie-${stamp}.jpg`, selfie);
 
-      await updateProfile(userId, { first_name: firstName.trim(), avatar_path: avatarPath });
+      await updateProfile(userId, {
+        first_name: firstName.trim(),
+        avatar_path: avatarPath,
+        gender: pref.gender,
+        walk_with: pref.walkWith,
+      });
       await updateContactInfo(userId, {
         phone: phone.trim() || null,
         instagram: instagram.trim().replace(/^@/, '') || null,
@@ -62,7 +72,7 @@ export default function OnboardingScreen() {
 
   return (
     <Screen>
-      <ThemedText type="subtitle">Verify it&apos;s you</ThemedText>
+      <ThemedText type="subtitle">Join the pack</ThemedText>
       <ThemedText themeColor="textSecondary">
         Everyone on PackTrack is a verified student. Your ID is only seen by our review team — never by other students.
       </ThemedText>
@@ -93,7 +103,12 @@ export default function OnboardingScreen() {
       </Card>
 
       <Card>
-        <ThemedText type="smallBold">2. Contact info (private)</ThemedText>
+        <ThemedText type="smallBold">2. Walking preference</ThemedText>
+        <WalkPreference gender={pref.gender} walkWith={pref.walkWith} onChange={setPref} />
+      </Card>
+
+      <Card>
+        <ThemedText type="smallBold">3. Contact info (private)</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
           Only shared after a walk, and only with someone who also chooses to share with you.
         </ThemedText>
@@ -102,9 +117,9 @@ export default function OnboardingScreen() {
       </Card>
 
       <Card>
-        <ThemedText type="smallBold">3. Government ID</ThemedText>
+        <ThemedText type="smallBold">4. Student ID</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          A photo of the front of your driver&apos;s license, state ID or passport, plus a selfie so we can match them.
+          A photo of your SJSU Tower Card (or a government ID), plus a selfie so we can match them.
         </ThemedText>
         <View style={styles.idRow}>
           <IdThumb label="ID front" image={idFront} />

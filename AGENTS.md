@@ -15,6 +15,7 @@ These are the core promises of the app. Every change must keep them true, and th
 5. **Profile photos are shared only within a group both people confirmed.** Enforced by the avatars storage select policy, using `shares_confirmed_group()`. `get_group_details` also hides `avatar_path` until then.
 6. **Contact info is shared only when both people opt in after a completed walk.** `contact_info` is select-own only; other people's contact details only come back from `get_share_status` / `get_mutual_contacts` when both `contact_shares` rows exist.
 7. **Live location goes only to group members.** It uses a *private* Realtime broadcast channel `group:<group_id>`, gated by policies on `realtime.messages`.
+8. **Gender and walking preference are private.** `profiles` is select-own; matching only uses them inside `find_or_create_group` (0004). Gender is locked after ID verification.
 
 If a feature seems to need loosening one of these, stop and ask the team instead of working around it.
 
@@ -53,6 +54,7 @@ supabase/tests/             SQL scenario test against plain PostGIS (see "Testin
 | `confirm_group` / `start_walk` / `leave_group` / `mark_arrived` | Group lifecycle: `forming → walking → completed` (or `cancelled`) |
 | `set_contact_share` / `get_share_status` / `get_mutual_contacts` | Mutual opt-in contact sharing |
 | `review_id_verification` | Reviewer-only (SQL editor). Approves or rejects a student's ID |
+| `walk_prefs_compatible` | Internal (0004). Co-ed vs same-gender preference check used by `find_or_create_group` |
 
 Member status: `joined → confirmed → arrived` (or `left`).
 

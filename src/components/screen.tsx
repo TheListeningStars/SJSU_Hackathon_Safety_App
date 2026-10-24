@@ -1,10 +1,10 @@
 import type { PropsWithChildren } from 'react';
-import { ScrollView, StyleSheet, TextInput, type TextInputProps } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type ScreenProps = PropsWithChildren<{
@@ -16,7 +16,7 @@ type ScreenProps = PropsWithChildren<{
 
 export function Screen({ children, bottomInset = 0, safeTop = true }: ScreenProps) {
   return (
-    <ThemedView style={styles.flex}>
+    <ThemedView type="backgroundElement" style={styles.flex}>
       <SafeAreaView style={styles.flex} edges={safeTop ? ['top', 'left', 'right'] : ['left', 'right']}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -28,27 +28,27 @@ export function Screen({ children, bottomInset = 0, safeTop = true }: ScreenProp
   );
 }
 
-export function Card({ children }: PropsWithChildren) {
+export function Card({ children, tone = 'card' }: PropsWithChildren<{ tone?: 'card' | 'tint' | 'gold' }>) {
+  const theme = useTheme();
+  const backgroundColor = { card: theme.card, tint: theme.backgroundSelected, gold: theme.goldSoft }[tone];
   return (
-    <ThemedView type="backgroundElement" style={styles.card}>
+    <View style={[styles.card, { backgroundColor, borderColor: tone === 'card' ? theme.border : 'transparent' }]}>
       {children}
-    </ThemedView>
+    </View>
   );
 }
 
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
   const theme = useTheme();
   return (
-    <ThemedView type="backgroundElement" style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
+    <View style={styles.field}>
+      <ThemedText type="smallBold">{label}</ThemedText>
       <TextInput
         placeholderTextColor={theme.textSecondary}
-        style={[styles.input, { color: theme.text }]}
+        style={[styles.input, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
         {...props}
       />
-    </ThemedView>
+    </View>
   );
 }
 
@@ -74,16 +74,18 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     gap: Spacing.two,
   },
   field: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
+    gap: Spacing.two,
   },
   input: {
     fontSize: 16,
-    paddingVertical: Spacing.one,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.three,
   },
 });

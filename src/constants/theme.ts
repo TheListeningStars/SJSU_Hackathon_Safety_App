@@ -7,32 +7,48 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// Pack Track palette (from the Figma design): SJSU navy and blue with gold accents.
 export const Colors = {
   light: {
-    text: '#000000',
+    text: '#172B40',
     background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    backgroundElement: '#F5F7FA',
+    backgroundSelected: '#EAF2FA',
+    textSecondary: '#647487',
     accent: '#0055A2',
     onAccent: '#ffffff',
-    success: '#1E7F4F',
-    warning: '#9A6200',
+    success: '#23725C',
+    warning: '#94621B',
     danger: '#C62828',
+    navy: '#073767',
+    gold: '#E5A823',
+    goldSoft: '#FFF3D7',
+    border: '#DFE6ED',
+    card: '#ffffff',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F2F5F8',
+    background: '#0B1622',
+    backgroundElement: '#132232',
+    backgroundSelected: '#1B3550',
+    textSecondary: '#9AA8B6',
     accent: '#5AA7F0',
     onAccent: '#001A33',
     success: '#4CC38A',
     warning: '#F0B54A',
     danger: '#FF6B6B',
+    navy: '#073767',
+    gold: '#E5A823',
+    goldSoft: '#3A2E12',
+    border: '#22364A',
+    card: '#132232',
   },
 } as const;
+
+/** Severity colours used for danger zones and alert pills: low green, medium yellow, high red. */
+export const SeverityColor = { low: '#23A26D', medium: '#E5A823', high: '#D64545' } as const;
+
+export const Radius = { sm: 8, md: 12, lg: 16, pill: 999 } as const;
 
 /** SJSU UPD Evening Guide / SafeWalk escort line — confirm the number before demoing. */
 export const SafeWalkPhone = '4089242222';

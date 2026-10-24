@@ -3,7 +3,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import type { MapZone } from '@/components/walk-map';
 import { listActiveIncidents, type Incident } from '@/lib/api';
+import { CATEGORY_LABEL } from '@/lib/safety';
 import type { Zone } from '@/lib/safety';
 import { supabase } from '@/lib/supabase';
 
@@ -47,5 +49,23 @@ export function useIncidents() {
     [incidents]
   );
 
-  return { incidents, zones, refresh, error };
+  // Same incidents, shaped for <WalkMap zones=…>.
+  const mapZones = useMemo<MapZone[]>(
+    () =>
+      incidents.map((i) => ({
+        id: i.id,
+        latitude: i.lat,
+        longitude: i.lng,
+        radius: i.radius_m,
+        title: i.title,
+        description: CATEGORY_LABEL[i.category] ?? i.summary ?? undefined,
+        severity: i.severity,
+        category: i.category,
+        reports: i.reports_count,
+        updatedAt: i.updated_at,
+      })),
+    [incidents]
+  );
+
+  return { incidents, zones, mapZones, refresh, error };
 }

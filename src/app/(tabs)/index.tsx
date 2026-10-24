@@ -2,19 +2,23 @@
 // create_walk_request + find_or_create_group (matching happens in Postgres, see AGENTS.md).
 
 import * as Location from 'expo-location';
-import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { SafetyBar } from '@/components/safety-bar';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
+import { Avatar } from '@/components/avatar';
+import { Chip } from '@/components/walk-preference';
+import { WalkMap, type MapPin } from '@/components/walk-map';
 import { useIncidents } from '@/hooks/use-incidents';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { createWalkRequest, findOrCreateGroup, getActiveGroup, listMeetupPoints, type MeetupPoint } from '@/lib/api';
 import {
   formatDistance,
@@ -47,7 +51,9 @@ export default function WalkScreen() {
   const [error, setError] = useState<string | null>(null);
   const [avoiding, setAvoiding] = useState<string[]>([]);
   const [reportOpen, setReportOpen] = useState(false);
-  const { zones, incidents } = useIncidents();
+  const { zones, mapZones, incidents } = useIncidents();
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
+  const theme = useTheme();
 
   const verified = profile?.verification_status === 'verified';
   const meetup = points.find((p) => p.id === meetupId) ?? null;
@@ -142,16 +148,6 @@ export default function WalkScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocked]);
 
-  const mapZones: MapZone[] = zones.map((z) => ({
-    id: z.id,
-    latitude: z.lat,
-    longitude: z.lng,
-    radius: z.radius_m,
-    title: z.title,
-    description: CATEGORY_LABEL[z.category],
-    severity: z.severity,
-  }));
-
   const pins: MapPin[] = [
     ...points.map<MapPin>((p) => ({
       id: p.id,
@@ -164,97 +160,169 @@ export default function WalkScreen() {
     ...(destination ? [{ id: 'destination', title: destLabel, kind: 'destination' as const, ...destination }] : []),
   ];
 
+  const high = incidents.filter((i) => i.severity === 'high').length;
+
   return (
-    <Screen bottomInset={BottomTabInset}>
-      <ThemedText type="subtitle">Walk home together</ThemedText>
+    <View style={styles.flex}>
+      <Screen bottomInset={BottomTabInset + 72}>
+        <View style={styles.head}>
+          <View style={styles.flex}>
+            <ThemedText type="subtitle">Hey, {profile?.first_name ?? 'Spartan'} 👋</ThemedText>
+            <ThemedText themeColor="textSecondary">Your next walk starts here.</ThemedText>
+          </View>
+          <Pressable onPress={() => router.navigate('/profile')} accessibilityLabel="Your profile">
+            <Avatar path={profile?.avatar_path} name={profile?.first_name} size={42} />
+          </Pressable>
+        </View>
 
-      {!verified && (
-        <Card>
-          <ThemedText type="smallBold" themeColor="warning">
-            ID verification pending
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            You can plan a route now. Matching with other students unlocks once your ID is approved.
-          </ThemedText>
-        </Card>
-      )}
+        <WalkMap
+          height={380}
+          topInset={68}
+          pins={pins}
+          route={route?.points}
+          zones={mapZones}
+          focusZoneId={focus ?? null}
+          onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)}
+          onMapPress={pickDestination}>
+          <View style={[styles.search, { backgroundColor: theme.card }]}>
+            <Ionicons name="search" size={20} color={theme.accent} />
+            <View style={styles.flex}>
+              <ThemedText style={styles.eyebrowMuted}>WALKING TOWARD</ThemedText>
+              <ThemedText type="smallBold" numberOfLines={1}>
+                {destination ? destLabel : 'Hold the map where you\'re headed'}
+              </ThemedText>
+            </View>
+            {destination && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {routeLoading ? '…' : route ? formatDuration(route.durationS) : ''}
+              </ThemedText>
+            )}
+          </View>
+        </WalkMap>
 
-      {activeGroup && (
-        <Card>
-          <ThemedText type="smallBold">You have a walk in progress</ThemedText>
-          <Button
-            title="Return to your group"
-            onPress={() => router.push({ pathname: '/group/[id]', params: { id: activeGroup } })}
-          />
-        </Card>
-      )}
-
-      <ThemedText type="smallBold">1. Pick a safe meetup point</ThemedText>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        {points.map((p) => (
-          <Chip key={p.id} label={p.is_staffed ? `${p.name} · staffed` : p.name} selected={p.id === meetupId} onPress={() => selectMeetup(p.id)} />
-        ))}
-      </ScrollView>
-
-      <ThemedText type="smallBold">2. Tap the map where you&apos;re headed</ThemedText>
-      <WalkMap pins={pins} route={route?.points} zones={mapZones} onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)} onMapPress={pickDestination} />
-
-      {destination && (
-        <Card>
-          <ThemedText type="smallBold">{destLabel}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {routeLoading
-              ? 'Finding a walking route…'
-              : route
-                ? `${formatDistance(route.distanceM)} · about ${formatDuration(route.durationS)} from ${meetup?.name}`
-                : 'No route yet'}
-          </ThemedText>
-          {avoiding.length > 0 && (
-            <ThemedText type="small" themeColor="warning">
+        {avoiding.length > 0 && (
+          <Card tone="gold">
+            <ThemedText type="smallBold" themeColor="warning">
               Routed around {avoiding.join(', ')} reported by other students.
             </ThemedText>
-          )}
-          {route?.isFallback && (
-            <ThemedText type="small" themeColor="warning">
-              No Google Maps key set, so this is a straight-line estimate. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY for real walking routes.
+          </Card>
+        )}
+        {route?.isFallback && (
+          <ThemedText type="small" themeColor="warning">
+            No Google Maps key set, so this is a straight-line estimate. Add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY for real walking routes.
+          </ThemedText>
+        )}
+
+        {activeGroup && (
+          <Card tone="tint">
+            <ThemedText style={styles.eyebrow}>● WALK IN PROGRESS</ThemedText>
+            <Button
+              title="Return to your pack"
+              icon="people-outline"
+              onPress={() => router.push({ pathname: '/group/[id]', params: { id: activeGroup } })}
+            />
+          </Card>
+        )}
+
+        {!verified && (
+          <Card tone="gold">
+            <ThemedText type="smallBold" themeColor="warning">
+              Student ID under review
             </ThemedText>
-          )}
+            <ThemedText type="small" themeColor="textSecondary">
+              You can plan a route now. Matching unlocks once your ID is approved.
+            </ThemedText>
+          </Card>
+        )}
+
+        <Card>
+          <View style={styles.rowBetween}>
+            <ThemedText style={styles.eyebrow}>● HEAD TO YOUR MEETUP</ThemedText>
+            {route && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatDistance(route.distanceM)} · {formatDuration(route.durationS)}
+              </ThemedText>
+            )}
+          </View>
+          <View style={styles.place}>
+            <View style={[styles.badge, { backgroundColor: theme.goldSoft }]}>
+              <Ionicons name="people" size={22} color={theme.navy} />
+            </View>
+            <View style={styles.flex}>
+              <ThemedText style={styles.placeName}>{meetup?.name ?? 'Pick a meetup point'}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>
+                {meetup?.description ?? 'Safe, well-lit spots where packs gather.'}
+                {meetup?.is_staffed ? ' · staffed' : ''}
+              </ThemedText>
+            </View>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {points.map((p) => (
+              <Chip key={p.id} label={p.name} selected={p.id === meetupId} onPress={() => selectMeetup(p.id)} />
+            ))}
+          </ScrollView>
+
+          <ThemedText type="smallBold" style={styles.gapTop}>
+            Leaving
+          </ThemedText>
+          <View style={styles.chips}>
+            {DEPART_OPTIONS.map((o) => (
+              <Chip key={o.minutes} label={o.label} selected={o.minutes === departIn} onPress={() => setDepartIn(o.minutes)} />
+            ))}
+          </View>
+
+          <ErrorText message={error} />
+          <Button
+            icon="people-outline"
+            title={findButtonTitle({ verified, hasActiveGroup: !!activeGroup, hasDestination: !!destination, routeLoading, hasRoute: !!route })}
+            onPress={findBuddies}
+            loading={matching}
+            disabled={!verified || !route || !!activeGroup}
+          />
+          <ThemedText type="small" themeColor="textSecondary">
+            {profile?.walk_with === 'same_gender' ? 'Matching only with students of your gender (change in Profile).' : 'Matching with anyone heading your way (change in Profile).'}
+          </ThemedText>
         </Card>
-      )}
 
-      <ThemedText type="smallBold">3. When are you leaving?</ThemedText>
-      <View style={styles.chips}>
-        {DEPART_OPTIONS.map((o) => (
-          <Chip key={o.minutes} label={o.label} selected={o.minutes === departIn} onPress={() => setDepartIn(o.minutes)} />
-        ))}
-      </View>
+        <Pressable onPress={() => router.navigate('/alerts')}>
+          <Card>
+            <View style={styles.rowBetween}>
+              <ThemedText style={[styles.eyebrow, { color: theme.success }]}>● LIVE</ThemedText>
+              <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+            </View>
+            <ThemedText type="smallBold">
+              {incidents.length
+                ? `${incidents.length} problem${incidents.length === 1 ? '' : 's'} reported on campus${high ? ` · ${high} high` : ''}`
+                : 'No problems reported right now'}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Tap a coloured zone on the map for details. Routes avoid them automatically.
+            </ThemedText>
+          </Card>
+        </Pressable>
 
-      <ErrorText message={error} />
-      <Button
-        title={findButtonTitle({ verified, hasActiveGroup: !!activeGroup, hasDestination: !!destination, routeLoading, hasRoute: !!route })}
-        onPress={findBuddies}
-        loading={matching}
-        disabled={!verified || !route || !!activeGroup}
-      />
+        <SafetyBar />
+      </Screen>
 
-      <Card>
-        <ThemedText type="smallBold">
-          {incidents.length ? `${incidents.length} problem${incidents.length === 1 ? '' : 's'} reported on campus right now` : 'No problems reported right now'}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          See something broken or unsafe on the way? Report it: it goes to the people who fix it, and walkers nearby are
-          rerouted around it.
-        </ThemedText>
-        <Button variant="secondary" title="Report a problem" onPress={() => setReportOpen(true)} />
-      </Card>
+      <SafeAreaView edges={[]} pointerEvents="box-none" style={[styles.fabWrap, { bottom: BottomTabInset + Spacing.three }]}>
+        <Pressable
+          onPress={() => setReportOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Report an incident"
+          style={({ pressed }) => [styles.fab, { backgroundColor: theme.navy, transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+          <Ionicons name="camera" size={20} color="#fff" />
+          <ThemedText type="smallBold" style={styles.fabText}>
+            Report incident
+          </ThemedText>
+        </Pressable>
+      </SafeAreaView>
 
-      <SafetyBar />
       <ReportSheet
         visible={reportOpen}
         onClose={() => setReportOpen(false)}
         fallbackLocation={meetup ? { latitude: meetup.lat, longitude: meetup.lng } : null}
       />
-    </Screen>
+    </View>
   );
 }
 
@@ -267,42 +335,58 @@ function findButtonTitle(s: {
   hasRoute: boolean;
 }) {
   if (!s.verified) return 'Waiting on ID verification';
-  if (s.hasActiveGroup) return 'You already have a walk in progress';
-  if (!s.hasDestination) return 'Tap the map to set your destination';
+  if (s.hasActiveGroup) return 'Walk already in progress';
+  if (!s.hasDestination) return 'Set a destination on the map';
   if (s.routeLoading) return 'Finding a walking route…';
-  if (!s.hasRoute) return 'No route found — try another spot';
-  return 'Find walking buddies';
+  if (!s.hasRoute) return 'No route found, try another spot';
+  return 'Find my pack';
 }
 
 function minutesFromNow(minutes: number) {
   return new Date(Date.now() + minutes * 60_000);
 }
 
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }}>
-      <ThemedView type={selected ? 'backgroundSelected' : 'backgroundElement'} style={styles.chip}>
-        <ThemedText type={selected ? 'smallBold' : 'small'} themeColor={selected ? 'accent' : 'text'}>
-          {label}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
-}
+const shadow = {
+  shadowColor: '#000',
+  shadowOpacity: 0.12,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 3 },
+  elevation: 4,
+};
 
 const styles = StyleSheet.create({
-  chips: {
+  flex: { flex: 1 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  search: {
+    position: 'absolute',
+    left: Spacing.three,
+    right: Spacing.three,
+    top: Spacing.three,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: 14,
+    borderRadius: Radius.md,
+    ...shadow,
   },
-  chipRow: {
+  eyebrowMuted: { fontSize: 10, lineHeight: 13, letterSpacing: 0.4, opacity: 0.6 },
+  eyebrow: { fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 0.3, color: '#0055A2' },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  place: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: Spacing.one },
+  badge: { width: 48, height: 48, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  placeName: { fontSize: 20, lineHeight: 26, fontWeight: '700' },
+  gapTop: { marginTop: Spacing.two },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  chipRow: { flexDirection: 'row', gap: Spacing.two, paddingVertical: Spacing.one },
+  fabWrap: { position: 'absolute', right: Spacing.three },
+  fab: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.two,
+    height: 52,
+    paddingHorizontal: 20,
+    borderRadius: Radius.pill,
+    ...shadow,
   },
-  chip: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.four,
-  },
+  fabText: { color: '#fff' },
 });

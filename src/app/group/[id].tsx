@@ -13,7 +13,7 @@ import { ReportSheet } from '@/components/report-sheet';
 import { Card, ErrorText, Screen } from '@/components/screen';
 import { SafetyBar } from '@/components/safety-bar';
 import { ThemedText } from '@/components/themed-text';
-import { WalkMap, type MapPin, type MapZone } from '@/components/walk-map';
+import { WalkMap, type MapPin } from '@/components/walk-map';
 import { useIncidents } from '@/hooks/use-incidents';
 import { Spacing, type ThemeColor } from '@/constants/theme';
 import {
@@ -58,7 +58,7 @@ export default function GroupScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reroute, setReroute] = useState<{ text: string; previous: LatLng[] } | null>(null);
-  const { zones } = useIncidents();
+  const { zones, mapZones } = useIncidents();
   const myPosition = useRef<LatLng | null>(null);
   const handledZones = useRef(new Set<string>());
   const rerouting = useRef(false);
@@ -295,15 +295,6 @@ export default function GroupScreen() {
       })),
   ];
 
-  const mapZones: MapZone[] = zones.map((z) => ({
-    id: z.id,
-    latitude: z.lat,
-    longitude: z.lng,
-    radius: z.radius_m,
-    title: z.title,
-    description: CATEGORY_LABEL[z.category],
-    severity: z.severity,
-  }));
 
   return (
     <Screen safeTop={false}>
@@ -328,6 +319,7 @@ export default function GroupScreen() {
       </Card>
 
       <WalkMap
+        height={300}
         pins={pins}
         route={fromGeoJsonCoordinates(group.shared_route)}
         soloRoute={soloRoute?.points}
@@ -336,7 +328,7 @@ export default function GroupScreen() {
       />
 
       {(group.status === 'forming' || group.status === 'walking') && (
-        <Button variant="secondary" title="Report a problem on the way" onPress={() => setReportOpen(true)} />
+        <Button variant="outline" icon="camera-outline" title="Report a problem on the way" onPress={() => setReportOpen(true)} />
       )}
 
       <View style={styles.members}>

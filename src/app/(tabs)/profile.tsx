@@ -6,8 +6,9 @@ import { Avatar } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card, ErrorText, Field, Screen } from '@/components/screen';
 import { ThemedText } from '@/components/themed-text';
+import { WalkPreference } from '@/components/walk-preference';
 import { BottomTabInset, Spacing, type ThemeColor } from '@/constants/theme';
-import { fetchContactInfo, updateContactInfo, updateProfile, type VerificationStatus } from '@/lib/api';
+import { fetchContactInfo, updateContactInfo, updateProfile, type Gender, type VerificationStatus, type WalkWith } from '@/lib/api';
 import { pickImage, uploadImage } from '@/lib/images';
 import { useSession } from '@/providers/session';
 
@@ -26,6 +27,21 @@ export default function ProfileScreen() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const userId = session?.user.id;
+  const [prefSaved, setPrefSaved] = useState(false);
+
+  const savePreference = async (next: { gender: Gender | null; walkWith: WalkWith }) => {
+    if (!userId) return;
+    setError(null);
+    setPrefSaved(false);
+    try {
+      const locked = profile?.verification_status === 'verified';
+      await updateProfile(userId, locked ? { walk_with: next.walkWith } : { gender: next.gender, walk_with: next.walkWith });
+      await refreshProfile();
+      setPrefSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     if (!userId) return;
@@ -84,7 +100,21 @@ export default function ProfileScreen() {
           </ThemedText>
         </View>
       </View>
-      <Button title="Change photo" variant="secondary" onPress={changePhoto} />
+      <Button title="Change photo" variant="outline" icon="camera-outline" onPress={changePhoto} />
+
+      <Card>
+        <WalkPreference
+          gender={profile?.gender ?? null}
+          walkWith={profile?.walk_with ?? 'anyone'}
+          genderLocked={profile?.verification_status === 'verified'}
+          onChange={savePreference}
+        />
+        {prefSaved && (
+          <ThemedText type="small" themeColor="success">
+            Saved. Applies to your next walk.
+          </ThemedText>
+        )}
+      </Card>
 
       <Card>
         <ThemedText type="smallBold">Contact info</ThemedText>
@@ -96,9 +126,9 @@ export default function ProfileScreen() {
         <Button title={saved ? 'Saved' : 'Save contact info'} onPress={saveContact} loading={saving} />
       </Card>
 
-      <Button title="Campus safety dashboard" variant="secondary" onPress={() => router.push('/admin')} />
+      <Button title="Campus safety dashboard" variant="outline" icon="stats-chart-outline" onPress={() => router.push('/admin')} />
       <ErrorText message={error} />
-      <Button title="Sign out" variant="secondary" onPress={signOut} />
+      <Button title="Sign out" variant="outline" onPress={signOut} />
     </Screen>
   );
 }

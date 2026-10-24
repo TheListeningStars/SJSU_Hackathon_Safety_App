@@ -23,6 +23,17 @@ Pairs verified university students so nobody walks home from campus alone. Stude
 Setup: run `supabase/migrations/0003_incidents.sql` in the SQL Editor after 0001 and 0002. To make yourself staff:
 `insert into public.safety_admins select id from auth.users where email = 'you@sjsu.edu';`
 
+## Design, sign-in and walking preference
+
+- **New look** from the Figma file: SJSU navy/gold theme, welcome screen, and four tabs: Map, Alerts, Buddies, Profile.
+- **Sign in** with school Google (Supabase OAuth, PKCE, `hd=sjsu.edu`) or a one-time code to a .edu email. To turn on Google:
+  1. Supabase → Authentication → Providers → Google: enable it and paste a Google OAuth client ID/secret.
+  2. Supabase → Authentication → URL Configuration → Redirect URLs: add `packtrackapp://auth-callback` and, for Expo Go, `exp://**`.
+  Non-.edu Google accounts are still rejected by the `enforce_edu_email` trigger.
+- **Walking preference**: onboarding and Profile ask for gender (optional) and "Anyone (co-ed)" or "Only my gender". Run `supabase/migrations/0004_walking_preferences.sql` after 0003. Both are private (profiles is select-own), matching respects them both ways, and gender is locked once the ID is verified. Test: `supabase/tests/preferences.sql`.
+- **Interactive map**: zones coloured by severity (green/yellow/red), tap a zone for details, hold the map to set a destination, buttons to centre on you, fit everything and hide reports. The Alerts tab's "View on map" flies to that report.
+- After pulling, run `npm install` (adds `@expo/vector-icons`).
+
 ## Stack
 
 | Layer | Pick |
