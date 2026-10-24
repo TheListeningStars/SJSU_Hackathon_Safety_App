@@ -10,6 +10,8 @@ export type MapPin = LatLng & {
   title: string;
   description?: string;
   kind: 'meetup' | 'meetup-selected' | 'destination' | 'split' | 'my-split' | 'walker';
+  /** Let the user drag this pin; the new spot is reported through onPinDragEnd. */
+  draggable?: boolean;
 };
 
 /** A reported problem drawn as a danger zone (see src/lib/safety.ts). */
@@ -32,6 +34,7 @@ export type WalkMapProps = {
   previousRoute?: LatLng[];
   zones?: MapZone[];
   onPinPress?: (id: string) => void;
+  onPinDragEnd?: (id: string, coordinate: LatLng) => void;
   onMapPress?: (coordinate: LatLng) => void;
   height?: number;
 };
@@ -39,7 +42,17 @@ export type WalkMapProps = {
 // Default view: SJSU main campus.
 const CAMPUS = { latitude: 37.3352, longitude: -121.8811, latitudeDelta: 0.015, longitudeDelta: 0.015 };
 
-export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onPinPress, onMapPress, height = 320 }: WalkMapProps) {
+export function WalkMap({
+  pins,
+  route,
+  soloRoute,
+  previousRoute,
+  zones = [],
+  onPinPress,
+  onPinDragEnd,
+  onMapPress,
+  height = 320,
+}: WalkMapProps) {
   const theme = useTheme();
   const mapRef = useRef<MapView>(null);
   const colors: Record<MapPin['kind'], string> = {
@@ -51,11 +64,13 @@ export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onP
     walker: theme.accent,
   };
 
-  // Keep the route and pins in view when they change.
-  const fitKey = [...(route ?? []), ...(soloRoute ?? []), ...pins].map((p) => `${p.latitude},${p.longitude}`).join('|');
+  // Re-frame the map only when a route appears or changes (and once when pins first load).
+  // Re-zooming on every tap or live-location update made the map jump around under your finger.
+  const routeKey = [...(route ?? []), ...(soloRoute ?? [])].map((p) => `${p.latitude},${p.longitude}`).join('|');
+  const fitKey = routeKey || (pins.length > 1 ? 'pins-loaded' : '');
   useEffect(() => {
     const coords = [...(route ?? []), ...(soloRoute ?? []), ...pins];
-    if (coords.length > 1) {
+    if (fitKey && coords.length > 1) {
       mapRef.current?.fitToCoordinates(coords, {
         edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
         animated: true,
@@ -110,11 +125,15 @@ export function WalkMap({ pins, route, soloRoute, previousRoute, zones = [], onP
       )}
       {pins.map((pin) => (
         <Marker
-          key={pin.id}
+          // Position is part of the key: on iOS a Marker sometimes ignores coordinate updates and
+          // stays on the first spot, so a moved pin is remounted instead.
+          key={`${pin.id}@${pin.latitude.toFixed(6)},${pin.longitude.toFixed(6)}`}
           coordinate={pin}
           title={pin.title}
           description={pin.description}
           pinColor={colors[pin.kind]}
+          draggable={pin.draggable}
+          onDragEnd={(e) => onPinDragEnd?.(pin.id, e.nativeEvent.coordinate)}
           onPress={() => onPinPress?.(pin.id)}
         />
       ))}

@@ -58,7 +58,7 @@ Member status: `joined → confirmed → arrived` (or `left`).
 
 ## Changing the database
 
-- `0001_packtrack.sql` and `0002_shared_path_matching.sql` have **already been applied** to the team's Supabase project (`ivsgdxmiuahfzfhxkook`). **Never edit applied migrations.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
+- `0001_packtrack.sql`, `0002_shared_path_matching.sql` and `0003_incidents.sql` have **already been applied** to the team's Supabase project (`ivsgdxmiuahfzfhxkook`). **Never edit applied migrations.** Add a new file `supabase/migrations/000N_<description>.sql` with only the changes (`create or replace function …`, `alter table …`), and tell the human to run it in the Supabase SQL Editor.
 - New RPCs: use `security definer`, `set search_path = public, extensions`, check `auth.uid()`, and add a typed wrapper in `src/lib/api.ts`. Internal helpers must `revoke execute … from public, anon, authenticated`.
 - PostGIS is installed in the `extensions` schema. Return lat/lng as plain numbers (`st_y(geom)`, `st_x(geom)`) because PostgREST returns geometry as hex.
 

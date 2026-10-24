@@ -84,7 +84,7 @@ export default function WalkScreen() {
     setRouteLoading(true);
     try {
       // Plan around anything already reported on the way, preferring streets with open businesses.
-      const departAt = new Date(Date.now() + departIn * 60 * 1000);
+      const departAt = minutesFromNow(departIn);
       const plan = await routeSafest({ latitude: from.lat, longitude: from.lng }, to, zones, departAt);
       if (requestNo === routeRequest.current) {
         setRoute(plan.route);
@@ -103,17 +103,31 @@ export default function WalkScreen() {
     updateRoute(points.find((p) => p.id === id) ?? null, destination);
   };
 
+  // Tapping somewhere else (or dragging the pin) simply replaces the destination.
+  const labelRequest = useRef(0);
   const pickDestination = async (coordinate: LatLng) => {
+    const requestNo = ++labelRequest.current;
     setDestination(coordinate);
     setDestLabel('Dropped pin');
     setError(null);
     updateRoute(meetup, coordinate);
     try {
       const [place] = await Location.reverseGeocodeAsync(coordinate);
-      if (place) setDestLabel([place.streetNumber, place.street].filter(Boolean).join(' ') || place.name || 'Dropped pin');
+      // Ignore a slow lookup for a spot the user has already moved away from.
+      if (place && requestNo === labelRequest.current) {
+        setDestLabel([place.streetNumber, place.street].filter(Boolean).join(' ') || place.name || 'Dropped pin');
+      }
     } catch {
       // A label is nice to have; the coordinates are what matter.
     }
+  };
+
+  const clearDestination = () => {
+    labelRequest.current++;
+    setDestination(null);
+    setDestLabel('Dropped pin');
+    setError(null);
+    updateRoute(meetup, null);
   };
 
   const findBuddies = async () => {
@@ -166,7 +180,9 @@ export default function WalkScreen() {
       longitude: p.lng,
       kind: p.id === meetupId ? 'meetup-selected' : 'meetup',
     })),
-    ...(destination ? [{ id: 'destination', title: destLabel, kind: 'destination' as const, ...destination }] : []),
+    ...(destination
+      ? [{ id: 'destination', title: destLabel, kind: 'destination' as const, draggable: true, ...destination }]
+      : []),
   ];
 
   return (
@@ -202,11 +218,28 @@ export default function WalkScreen() {
       </ScrollView>
 
       <ThemedText type="smallBold">2. Tap the map where you&apos;re headed</ThemedText>
-      <WalkMap pins={pins} route={route?.points} zones={mapZones} onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)} onMapPress={pickDestination} />
+      <WalkMap
+        pins={pins}
+        route={route?.points}
+        zones={mapZones}
+        onPinPress={(id) => points.some((p) => p.id === id) && selectMeetup(id)}
+        onPinDragEnd={(id, coordinate) => id === 'destination' && pickDestination(coordinate)}
+        onMapPress={pickDestination}
+      />
+      {destination && (
+        <ThemedText type="small" themeColor="textSecondary">
+          Changed your mind? Tap anywhere else on the map, or press and drag the red pin.
+        </ThemedText>
+      )}
 
       {destination && (
         <Card>
-          <ThemedText type="smallBold">{destLabel}</ThemedText>
+          <View style={styles.destHeader}>
+            <ThemedText type="smallBold" style={styles.flex}>
+              {destLabel}
+            </ThemedText>
+            <Button compact variant="secondary" title="Clear" onPress={clearDestination} />
+          </View>
           <ThemedText type="small" themeColor="textSecondary">
             {routeLoading
               ? 'Finding a walking route…'
@@ -310,6 +343,14 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: 'row',
     gap: Spacing.two,
+  },
+  destHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  flex: {
+    flex: 1,
   },
   chip: {
     paddingVertical: Spacing.two,
